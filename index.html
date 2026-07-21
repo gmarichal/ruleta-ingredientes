@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ruleta de Ingredientes</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: linear-gradient(135deg, #2b1055, #7597de);
+    min-height: 100vh;
+    color: #fff;
+    padding: 20px;
+  }
+  h1 { text-align: center; margin-bottom: 4px; }
+  .subtitle { text-align: center; opacity: .8; margin-bottom: 20px; font-size: 14px; }
+  .layout {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  .panel {
+    background: rgba(255,255,255,.1);
+    backdrop-filter: blur(6px);
+    border-radius: 16px;
+    padding: 20px;
+    min-width: 300px;
+    flex: 1;
+    max-width: 360px;
+  }
+  .wheel-wrap { position: relative; width: 460px; height: 460px; flex-shrink: 0; }
+  canvas { width: 100%; height: 100%; display: block; }
+  .pointer {
+    position: absolute;
+    top: 50%; right: -6px;
+    transform: translateY(-50%);
+    width: 0; height: 0;
+    border-top: 16px solid transparent;
+    border-bottom: 16px solid transparent;
+    border-right: 30px solid #ffd166;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,.5));
+    z-index: 2;
+  }
+  h2 { font-size: 17px; margin-bottom: 12px; }
+  input[type=text] {
+    width: 100%;
+    padding: 11px 12px;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    margin-bottom: 10px;
+  }
+  button {
+    padding: 9px 16px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    background: #ffd166;
+    color: #2b1055;
+    transition: transform .1s, opacity .2s;
+  }
+  button:hover:not(:disabled) { transform: scale(1.04); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-spin {
+    width: 100%;
+    padding: 14px;
+    font-size: 17px;
+    background: #ef476f;
+    color: #fff;
+  }
+  .btn-sec { width: 100%; margin-top: 10px; background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.4); }
+  .badge { font-size: 12px; opacity: .75; margin-top: 10px; text-align: center; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; color: #fff; }
+  th, td { padding: 8px 10px; text-align: left; }
+  th { background: rgba(255,255,255,.15); }
+  tr:nth-child(even) td { background: rgba(255,255,255,.08); }
+  .tabla-scroll { max-height: 300px; overflow-y: auto; border-radius: 8px; margin: 12px 0; }
+
+  /* Modal */
+  .overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.6);
+    z-index: 10;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+  }
+  .overlay.abierto { display: flex; }
+  .modal {
+    background: #2b1055;
+    border: 2px solid #ffd166;
+    border-radius: 20px;
+    padding: 32px 28px;
+    max-width: 440px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5);
+    animation: pop .25s ease-out;
+  }
+  @keyframes pop { from { transform: scale(.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .modal .emoji { font-size: 44px; margin-bottom: 8px; }
+  .modal .nombre { font-size: 18px; opacity: .85; }
+  .modal .ingrediente { font-size: 30px; font-weight: 700; color: #ffd166; margin: 8px 0 18px; }
+  .modal .actions { display: flex; gap: 10px; justify-content: center; margin-top: 6px; }
+  @media (max-width: 520px) { .wheel-wrap { width: 320px; height: 320px; } }
+</style>
+</head>
+<body>
+
+<h1>🎡 Ruleta de Ingredientes</h1>
+<p class="subtitle">Desayunos y meriendas · dulces y salados — 50 ingredientes básicos</p>
+
+<div class="layout">
+
+  <!-- Turno -->
+  <div class="panel">
+    <h2>🎯 Tu turno</h2>
+    <input type="text" id="nombre" placeholder="Escribí tu nombre..." maxlength="30" autofocus>
+    <button class="btn-spin" id="btnGirar">🎡 ¡Girar!</button>
+    <button class="btn-sec" id="btnFinalizar" disabled>🏁 Finalizar juego</button>
+    <p class="badge" id="contador">Quedan 50 ingredientes</p>
+  </div>
+
+  <!-- Ruleta -->
+  <div class="wheel-wrap">
+    <div class="pointer"></div>
+    <canvas id="ruleta" width="460" height="460"></canvas>
+  </div>
+
+</div>
+
+<!-- Pop-up resultado del giro -->
+<div class="overlay" id="ovResultado">
+  <div class="modal">
+    <div class="emoji">🎉</div>
+    <div class="nombre" id="mNombre"></div>
+    <div class="ingrediente" id="mIngrediente"></div>
+    <button class="btn-spin" id="btnOk" style="width:auto;padding:12px 34px">¡Siguiente!</button>
+  </div>
+</div>
+
+<!-- Pop-up tabla final -->
+<div class="overlay" id="ovFinal">
+  <div class="modal">
+    <div class="emoji">🏁</div>
+    <h2>Resultados finales</h2>
+    <div class="tabla-scroll">
+      <table>
+        <thead><tr><th>Persona</th><th>Ingrediente</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div class="actions">
+      <button id="btnCopiar">Copiar tabla</button>
+      <button id="btnReiniciar">Reiniciar juego</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const INGREDIENTES = [
+  // Desayunos
+  "Huevos","Pan","Avena","Miel","Manteca","Queso crema","Jamón","Yogur",
+  "Aceite","Banana","Frutillas","Café","Leche","Dulce de leche","Mermelada","Palta",
+  // Dulces
+  "Chocolate","Azúcar","Harina","Vainilla","Crema de leche","Canela","Nueces","Almendras",
+  "Coco rallado","Limón","Naranja","Manzana","Pasas de uva","Cacao","Leche condensada","Gelatina",
+  "Sal","Ricota","Levadura","Membrillo",
+  // Salados y de alacena
+  "Yerba mate","Cebolla","Tomate","Queso muzzarella","Maicena","Té","Polvo de hornear","Bicarbonato",
+  "Dulce de batata","Azúcar impalpable","Zanahoria","Chips de chocolate","Grasa","Anís"
+];
+
+const COLORES = ["#ef476f","#ffd166","#06d6a0","#118ab2","#f78c6b","#9b5de5","#00bbf9","#fee440"];
+
+let ingredientes = [...INGREDIENTES];
+let resultados = [];   // {nombre, ingrediente}
+let girando = false;
+let terminado = false;
+let angulo = 0;
+
+const canvas = document.getElementById("ruleta");
+const ctx = canvas.getContext("2d");
+const $ = id => document.getElementById(id);
+
+function dibujar() {
+  const n = ingredientes.length;
+  const cx = canvas.width/2, cy = canvas.height/2, r = cx - 8;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  if (n === 0) return;
+  const paso = 2*Math.PI/n;
+  for (let i=0;i<n;i++){
+    const ini = angulo + i*paso;
+    ctx.beginPath();
+    ctx.moveTo(cx,cy);
+    ctx.arc(cx,cy,r,ini,ini+paso);
+    ctx.closePath();
+    ctx.fillStyle = COLORES[i % COLORES.length];
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,.25)";
+    ctx.stroke();
+    ctx.save();
+    ctx.translate(cx,cy);
+    ctx.rotate(ini + paso/2);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#1a1a2e";
+    ctx.font = n > 40 ? "bold 9px Segoe UI" : n > 25 ? "bold 11px Segoe UI" : "bold 13px Segoe UI";
+    ctx.fillText(ingredientes[i], r-10, 4);
+    ctx.restore();
+  }
+  ctx.beginPath();
+  ctx.arc(cx,cy,34,0,2*Math.PI);
+  ctx.fillStyle = "#2b1055";
+  ctx.fill();
+  ctx.strokeStyle = "#ffd166";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.lineWidth = 1;
+  ctx.fillStyle = "#ffd166";
+  ctx.font = "bold 12px Segoe UI";
+  ctx.textAlign = "center";
+  ctx.fillText(ingredientes.length, cx, cy+4);
+}
+
+function actualizarEstado(){
+  $("contador").textContent = "Quedan " + ingredientes.length + " ingredientes";
+  $("btnFinalizar").disabled = resultados.length === 0 || terminado;
+}
+
+$("btnGirar").onclick = ()=>{
+  if (girando || terminado) return;
+  const nombre = $("nombre").value.trim();
+  if (!nombre){ $("nombre").focus(); return; }
+  if (resultados.some(r=>r.nombre.toLowerCase()===nombre.toLowerCase())){
+    alert("Ese nombre ya giró. Usá otro nombre."); return;
+  }
+  if (ingredientes.length === 0){ finalizar(); return; }
+
+  girando = true;
+  $("btnGirar").disabled = true;
+
+  const n = ingredientes.length;
+  const paso = 2*Math.PI/n;
+  const elegido = Math.floor(Math.random()*n);
+  const destinoBase = -(elegido*paso + paso/2);
+  const vueltas = 6 + Math.floor(Math.random()*3);
+  const anguloInicial = angulo;
+  const delta = (destinoBase - vueltas*2*Math.PI) - (anguloInicial % (2*Math.PI));
+  const dur = 4200;
+  const t0 = performance.now();
+
+  function frame(t){
+    const p = Math.min((t-t0)/dur, 1);
+    const ease = 1 - Math.pow(1-p, 4);
+    angulo = anguloInicial + delta*ease;
+    dibujar();
+    if (p < 1) requestAnimationFrame(frame);
+    else terminarGiro(elegido, nombre);
+  }
+  requestAnimationFrame(frame);
+};
+
+$("nombre").addEventListener("keydown", e=>{ if(e.key==="Enter") $("btnGirar").click(); });
+
+function terminarGiro(idx, nombre){
+  const ingrediente = ingredientes[idx];
+  resultados.push({nombre, ingrediente});
+  ingredientes.splice(idx,1);
+  angulo = angulo % (2*Math.PI);
+  dibujar();
+  actualizarEstado();
+  // Pop-up con el resultado
+  $("mNombre").textContent = nombre + ", te tocó:";
+  $("mIngrediente").textContent = ingrediente;
+  $("ovResultado").classList.add("abierto");
+}
+
+$("btnOk").onclick = ()=>{
+  $("ovResultado").classList.remove("abierto");
+  girando = false;
+  $("nombre").value = "";
+  if (ingredientes.length === 0){ finalizar(); return; }
+  $("btnGirar").disabled = false;
+  $("nombre").focus();
+};
+
+$("btnFinalizar").onclick = finalizar;
+
+function finalizar(){
+  terminado = true;
+  $("btnGirar").disabled = true;
+  $("nombre").disabled = true;
+  $("btnFinalizar").disabled = true;
+  const tb = $("tbody");
+  tb.innerHTML = "";
+  resultados.forEach(r=>{
+    const tr = document.createElement("tr");
+    const td1 = document.createElement("td");
+    const td2 = document.createElement("td");
+    td1.textContent = r.nombre;
+    td2.textContent = r.ingrediente;
+    tr.append(td1, td2);
+    tb.appendChild(tr);
+  });
+  $("ovFinal").classList.add("abierto");
+}
+
+$("btnCopiar").onclick = ()=>{
+  const texto = "Persona\tIngrediente\n" +
+    resultados.map(r=>`${r.nombre}\t${r.ingrediente}`).join("\n");
+  navigator.clipboard.writeText(texto).then(()=>{
+    $("btnCopiar").textContent = "¡Copiado! ✓";
+    setTimeout(()=>$("btnCopiar").textContent = "Copiar tabla", 1500);
+  });
+};
+
+$("btnReiniciar").onclick = ()=>{
+  ingredientes = [...INGREDIENTES];
+  resultados = [];
+  girando = false;
+  terminado = false;
+  angulo = 0;
+  $("ovFinal").classList.remove("abierto");
+  $("nombre").disabled = false;
+  $("nombre").value = "";
+  $("btnGirar").disabled = false;
+  actualizarEstado();
+  dibujar();
+  $("nombre").focus();
+};
+
+dibujar();
+actualizarEstado();
+</script>
+</body>
+</html>
